@@ -27,13 +27,65 @@ python main.py
 設定自動儲存於 `%APPDATA%\AutoClicker\settings.json`（原子寫入，損壞自動回預設；
 新增的主題與視窗大小位置缺少時使用預設值，舊設定檔可直接沿用）。
 
-## 打包為單一執行檔
+## 打包與發布
+
+正式產物由 GitHub Actions 的 Release workflow 建置（PyInstaller 版本固定於
+`requirements-build.txt`），推送 `v*.*.*` tag 後自動測試、打包、產生 SHA256、
+簽發來源證明並建立 Release；流程詳見「發布流程」。
 
 ```powershell
+# 本機手動打包（需自行安裝 PyInstaller）
 pip install pyinstaller
 powershell -ExecutionPolicy Bypass -File build.ps1
 # 產出 dist\AutoClicker.exe 與 SHA256 摘要檔
 ```
+
+注意：`build.ps1` 內含 `--exclude-module urllib`，與 PyInstaller 6.22 的
+runtime hook 不相容（產物會因 `No module named 'urllib'` 無法啟動）。
+Release workflow 使用不排除該模組的參數；本機打包請先移除該排除項
+（本次未改動 `build.ps1`）。因此 Release 產物可能包含未使用的標準庫網路
+模組，但應用程式碼仍完全不使用網路 API，並由 `tests/test_security.py` 掃描把關。
+
+## 下載與驗證
+
+Release 附上 `AutoClicker.exe` 與 `AutoClicker.exe.sha256`；若 onefile
+冷啟動較慢，另附 `AutoClicker-onedir.zip`。
+
+1. PowerShell 比對雜湊：
+
+```powershell
+Get-FileHash .\AutoClicker.exe -Algorithm SHA256
+Get-Content .\AutoClicker.exe.sha256
+```
+
+兩者應一致（`.sha256` 檔第一欄為雜湊，後面是檔名）。
+
+2. 驗證來源證明（需 GitHub CLI 2.49+ 並登入）：
+
+```powershell
+gh attestation verify .\AutoClicker.exe --repo corn323/auto-clicker
+```
+
+3. exe **未經程式碼簽章**，SmartScreen 或 Smart App Control 可能攔截。
+   若不想繞過系統警告，建議下載原始碼後執行 `python main.py`。
+
+### 實測數據
+
+| 形式 | 檔案大小 | 冷啟動 | 閒置記憶體 |
+|---|---:|---|---|
+| `--onefile` | 8.35 MB | 未測* | 未測* |
+| `--onedir`（資料夾） | 19.28 MB | 未測* | 未測* |
+| `--onedir`（zip） | 8.33 MB | — | — |
+
+量測環境：Windows 11、Python 3.10.11、PyInstaller 6.22.3，本機以
+Release 相同參數建置；檔案大小為實際測量值。
+*本機啟用 Smart App Control，未簽章的新建 exe 被系統阻擋而無法啟動，
+因此冷啟動與閒置記憶體未測；Release workflow 會在 `windows-latest`
+上量測 onefile 與 onedir 兩者並寫入 Release 說明，數據不在此捏造。
+
+`--onefile` 是單一 exe、免解壓好攜帶，但啟動時需先解壓到暫存，一般較慢；
+`--onedir` 需整包解壓，啟動較快、總體積較大，適合長期固定使用。若 Release
+量到 onefile 冷啟動超過 1 秒，會同時附上 `AutoClicker-onedir.zip` 供選擇。
 
 ## 使用說明
 
@@ -94,6 +146,7 @@ wait 10–600000ms、hold_ms ≤ 1000、按鍵限白名單（英數、F1–F24 �
    關閉遮罩後再移入角落，應立即停止。
 
 可用「全域 › 進階設定 › 重新校正」在變更螢幕配置後更新各點位的螢幕資訊。
+
 ## 採用的 Win32 API
 
 | 用途 | API |
@@ -112,6 +165,33 @@ wait 10–600000ms、hold_ms ≤ 1000、按鍵限白名單（英數、F1–F24 �
 - 遊戲反作弊系統（EAC、BattlEye 等）可能封鎖或偵測輸入注入；請遵守各服務條款。
 - `GetPixel` 判色較慢且可能受硬體加速影響，`if_pixel_color` 不保證在所有遊戲內有效。
 - 僅支援 Windows 10/11（Python 3.10+）。
+
+## 發布流程
+
+1. 更新 `autoclicker/__init__.py` 的 `__version__` 與 `CHANGELOG.md`。
+2. 提交後建立並推送 tag：
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+3. Release workflow 會依序：跑完整測試（106 例）→ 核對 tag 與 `__version__`
+   （`v0.1.0` 對 `0.1.0`，不一致即失敗）→ 以固定版 PyInstaller 建置
+   onefile 與 onedir → 產生 SHA256 → 啟動 exe 煙霧測試並量測 →
+   `actions/attest-build-provenance` 簽發來源證明 → 以內建 `gh` 建立 Release。
+4. 需求 Tag 命名為 `v*.*.*`；測試失敗、版本不符或 exe 啟動即崩潰都不會發布。
+
+`push` 到 `main` 或開 PR 時會由 `ci.yml` 在 Windows 上跑 Python 3.11/3.12
+矩陣測試；`codeql.yml` 另做 Python 靜態掃描（push/PR 與每週排程）。
+
+### 需要維護者在 GitHub 手動設定
+
+- 分支保護：對 `main` 要求 CI 通過、禁止強制推送。
+- Tag 保護：限制誰能建立/刪除 `v*.*.*`（建議只允許維護者）。
+- 確認 Actions 允許 `GITHUB_TOKEN` 建立 Release；若使用私有 repo，
+  還需允許 artifact attestations 與 CodeQL（Advanced Security）。
+- Dependabot PR 需人工審核，勿自動合併（避免供應鏈自動更新）。
 
 ## 開發
 

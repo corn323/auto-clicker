@@ -19,6 +19,11 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 | T9 | 遮罩/新增期間誤觸角落急停，導致無法操作 | 自身功能衝突 | `set_corner_suppressed()` 於選取畫面遮罩與新增期間暫停角落偵測，結束（含例外）即恢復 |
 | T10 | 行程權限查詢過度取權 | UIPI 偵測 | `OpenProcess` 僅要求 `PROCESS_QUERY_LIMITED_INFORMATION`，且 `hproc`/`token` 皆以 `try/finally` + `CloseHandle` 關閉 |
 | T11 | 按下前延遲被濫用成超長等待 | 設定檔 | `press_delay_ms` 夾限 0–50ms，隨機附加 0–3ms；所有延遲皆可被停止/急停中斷 |
+| T12 | GitHub Actions 被入侵或 tag 被移動 | 第三方 action | 全部 action 釘完整 commit SHA（含 `actions/*`）並註記版本；Dependabot 每週提 PR；CodeQL 掃描；不自動合併依賴 PR |
+| T13 | 偽造 tag 或版本不一致 | Git tag | Release 只接受 `v*.*.*`，並核對 `autoclicker.__version__`；來源證明綁定 repo/commit；建議手動開啟 tag 保護 |
+| T14 | 建置工具被投毒（PyPI） | `requirements-build.txt` | PyInstaller 與 hooks 固定精確版本；只在 Release job 安裝；Dependabot 監控；殘餘風險見下節 |
+| T15 | Token 權限過大或濫用 | `GITHUB_TOKEN` | workflow 預設 `permissions` 最小；只有 release job 有 `contents`/`id-token`/`attestations` write；checkout 設 `persist-credentials: false`；無 `pull_request_target`；不使用自訂 secrets |
+| T16 | 下載到被替換的未簽章 exe | 發布產物 | Release 附 SHA256 與 build provenance（`gh attestation verify`）；文件明示未簽章風險；殘餘風險見下節 |
 
 ## 隨機數
 
@@ -55,6 +60,27 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 - [x] 按下前延遲夾限 0–50ms（+0–3ms 隨機），可被停止中斷
 - [x] 遮罩以虛擬桌面實體像素定位（Win32），不依賴 Tk 縮放
 - [x] 打包腳本僅執行 PyInstaller 與 SHA256，不下載任何東西
+- [x] 所有 GitHub Actions 釘完整 commit SHA（含官方 `actions/*`）
+- [x] workflow 預設最小權限；只有 Release job 有寫入權
+- [x] 無 `pull_request_target`；Release 僅由 tag 觸發
+- [x] GitHub 事件內容經 `env` 傳入，不直接插入 `run` 腳本
+- [x] 建置工具固定版本（`requirements-build.txt`），Dependabot 每週監控
+
+## 供應鏈殘餘風險（無法完全緩解）
+
+- **平台與上游帳號**：GitHub、runner 映像、action 維護者或 PyPI 帳號若被入侵，
+  本專案無法保證偵測。以完整 SHA 釘選、最小權限、人工審核 Dependabot PR
+  降低機率，但無法消除。
+- **建置工具投毒**：固定版本只防版本漂移，不防同版本套件被替換；目前未做
+  hash pinning 或離線快取，列為後續強化項。
+- **Tag/分支保護**：需在 GitHub 網頁手動設定，workflow 無法自我保證。
+- **未簽章 exe**：attestation 只證明「由哪個 repo/commit/workflow 建置」，
+  不證明二進位無惡意；若 repo 或 action 已被入侵，證明同樣失效。
+  Windows SmartScreen／Smart App Control 仍可能攔截。
+- **非 hermetic 建置**：Python patch 版本與 runner 映像會更新，產物不保證
+  bit-for-bit 可重現。
+- **私有 repo 限制**：CodeQL 與 artifact attestations 需方案支援；公開 repo
+  使用 `GITHUB_TOKEN` 即可，無需自訂 secrets。
 
 ## 2026-11 安全複核（本輪變更）
 
@@ -69,5 +95,6 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 | 遮罩改用虛擬桌面實體像素 | 負座標/混合 DPI 精準貼合 | 手動驗證步驟（README「手動驗證」）；`virtual_rect` 實體像素 |
 | build.ps1 僅 PyInstaller + SHA256 | 供應鏈：不在打包流程下載/安裝 | 腳本無網路指令；缺少 PyInstaller 時僅報錯不下載 |
 | UI 重設計（可縮放、主題、視窗記憶） | 無新增攻擊面；`theme` 限 dark/light，`window` 四欄位皆為整數並夾限，位置不符螢幕時置中 | 106 測試 + 多尺寸/主題截圖 |
+| CI／CodeQL／Release workflow | 供應鏈與權限面：action 釘 SHA、預設唯讀、Release 才 write、無 `pull_request_target`、tag 與 `__version__` 核對、產物 SHA256 與 provenance | workflow 靜態檢視；推送後由 GitHub 實際執行驗證 |
 
 測試總數：**106 例**，`python -m unittest discover -s tests -t .` 全數通過。
