@@ -412,8 +412,21 @@ class ScriptRunner:
             self._current = f"if_pixel ({step['x']}, {step['y']})"
         self._emit()
         try:
-            handler = getattr(self, f"_do_{stype}")
-            return handler(step, sleeper)
+            # 明確分派，不使用 getattr(self, f"_do_{stype}") 這類動態屬性取用。
+            if stype == "click":
+                return self._do_click(step, sleeper)
+            if stype == "move":
+                return self._do_move(step, sleeper)
+            if stype == "wait":
+                return self._do_wait(step, sleeper)
+            if stype == "press_key":
+                return self._do_press_key(step, sleeper)
+            if stype == "loop":
+                return self._do_loop(step, sleeper)
+            if stype == "if_pixel_color":
+                return self._do_if_pixel_color(step, sleeper)
+            self._safe_error(f"不支援的步驟類型：{stype}")
+            return False
         except OSError as exc:
             self._safe_error(f"{stype} 失敗：{exc}")
             return False

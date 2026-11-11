@@ -34,17 +34,16 @@ python main.py
 簽發來源證明並建立 Release；流程詳見「發布流程」。
 
 ```powershell
-# 本機手動打包（需自行安裝 PyInstaller）
-pip install pyinstaller
+# 本機手動打包（需自行安裝 PyInstaller，腳本不會自動下載任何東西）
+pip install -r requirements-build.txt
 powershell -ExecutionPolicy Bypass -File build.ps1
 # 產出 dist\AutoClicker.exe 與 SHA256 摘要檔
 ```
 
-注意：`build.ps1` 內含 `--exclude-module urllib`，與 PyInstaller 6.22 的
-runtime hook 不相容（產物會因 `No module named 'urllib'` 無法啟動）。
-Release workflow 使用不排除該模組的參數；本機打包請先移除該排除項
-（本次未改動 `build.ps1`）。因此 Release 產物可能包含未使用的標準庫網路
-模組，但應用程式碼仍完全不使用網路 API，並由 `tests/test_security.py` 掃描把關。
+打包參數不使用 `--exclude-module` 排除標準庫：PyInstaller 6.x 的 runtime hook
+（`pyi_rth_inspect` 等）需要 `urllib`，一旦排除，產物啟動時會直接出現
+`No module named 'urllib'` 而開不了 GUI。應用程式原始碼本身完全不使用網路、
+程序執行或動態求值 API，由 `tests/test_security.py` 的 AST 掃描逐項把關。
 
 ## 下載與驗證
 
@@ -71,17 +70,24 @@ gh attestation verify .\AutoClicker.exe --repo corn323/auto-clicker
 
 ### 實測數據
 
-| 形式 | 檔案大小 | 冷啟動 | 閒置記憶體 |
-|---|---:|---|---|
-| `--onefile` | 8.35 MB | 未測* | 未測* |
-| `--onedir`（資料夾） | 19.28 MB | 未測* | 未測* |
-| `--onedir`（zip） | 8.33 MB | — | — |
+量測環境：Windows 11（26xxx build）、Python 3.10.11、PyInstaller 6.22.3。
 
-量測環境：Windows 11、Python 3.10.11、PyInstaller 6.22.3，本機以
-Release 相同參數建置；檔案大小為實際測量值。
-*本機啟用 Smart App Control，未簽章的新建 exe 被系統阻擋而無法啟動，
-因此冷啟動與閒置記憶體未測；Release workflow 會在 `windows-latest`
-上量測 onefile 與 onedir 兩者並寫入 Release 說明，數據不在此捏造。
+| 項目 | 數值 |
+|---|---|
+| Python 直譯器啟動（`python -c pass`） | 26–37 ms（5 次量測） |
+| GUI 啟動（原始碼 `pythonw main.py`） | 首次 1006 ms（冷啟含磁碟快取）、後續 337 / 391 ms |
+| GUI 閒置記憶體（視窗開啟 5 秒後） | 31.8–31.9 MB |
+| GUI 記憶體 128 秒取樣 | 31.8 MB 全程持平，無持續成長 |
+| `--onefile` 產物大小 | 8.35 MB |
+| `--onedir` 產物大小（資料夾） | 19.28 MB |
+| `--onedir` 壓縮後（zip） | 8.33 MB |
+| 打包後 EXE 冷啟動 | 未測* |
+| 打包後 EXE 閒置記憶體 | 未測* |
+
+\* 本機啟用 Smart App Control，未簽章的新建 exe 會被系統攔截（CodeIntegrity
+事件 3118），因此無法在本機啟動打包後的 exe 取得數據；Release workflow 會在
+`windows-latest` 上啟動 exe 做煙霧測試並量測 onefile／onedir 的啟動時間與
+閒置記憶體，直接寫入該次 Release 的說明。數據不在此捏造。
 
 `--onefile` 是單一 exe、免解壓好攜帶，但啟動時需先解壓到暫存，一般較慢；
 `--onedir` 需整包解壓，啟動較快、總體積較大，適合長期固定使用。若 Release
@@ -176,14 +182,16 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-3. Release workflow 會依序：跑完整測試（106 例）→ 核對 tag 與 `__version__`
+3. Release workflow 會依序：跑完整測試（118 例）→ 核對 tag 與 `__version__`
    （`v0.1.0` 對 `0.1.0`，不一致即失敗）→ 以固定版 PyInstaller 建置
    onefile 與 onedir → 產生 SHA256 → 啟動 exe 煙霧測試並量測 →
    `actions/attest-build-provenance` 簽發來源證明 → 以內建 `gh` 建立 Release。
 4. 需求 Tag 命名為 `v*.*.*`；測試失敗、版本不符或 exe 啟動即崩潰都不會發布。
 
-`push` 到 `main` 或開 PR 時會由 `ci.yml` 在 Windows 上跑 Python 3.11/3.12
-矩陣測試；`codeql.yml` 另做 Python 靜態掃描（push/PR 與每週排程）。
+`push` 到 `main` 或開 PR 時會由 `ci.yml` 在 Windows 上跑 Python 3.11／3.12／
+3.13／3.14 矩陣測試（只指定 major.minor，由 setup-python 依 runner 平台挑選
+可取得的最新 patch 版本）；`codeql.yml` 另做 Python 靜態掃描（push/PR 與
+每週排程）。
 
 ### 需要維護者在 GitHub 手動設定
 
@@ -196,9 +204,10 @@ git push origin v0.1.0
 ## 開發
 
 ```powershell
-python -m unittest discover -s tests -t .   # 106 個測試
+python -m unittest discover -s tests -t .   # 118 個測試
 ```
 
-安全設計與威脅模型見 `SECURITY.md`；第三方 Skills 採用紀錄見 `SKILLS.md`。
+安全設計與威脅模型見 `SECURITY.md`。
 原始碼禁止使用網路、subprocess、eval/exec 等危險 API，並有 `tests/test_security.py`
-自動掃描把關。
+以字串掃描＋AST 結構化檢查自動把關（含 CI workflow 自身的權限與 SHA 釘選檢查）。
+AI Agent 的提示詞、Skills 與本機設定不納入版控（見 `.gitignore`）。

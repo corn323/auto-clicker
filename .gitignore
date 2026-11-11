@@ -1,5 +1,59 @@
+# ---- Python 快取與建置產物 ----
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.venv/
+venv/
 build/
 dist/
+dist-onedir/
 *.spec
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+*.tmp
+
+# ---- 本機設定與敏感資料 ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+
+# ---- AI Agent 指示文件（不得上傳到 GitHub）----
+AGENTS.md
+**/AGENTS.md
+CLAUDE.md
+**/CLAUDE.md
+GEMINI.md
+**/GEMINI.md
+SKILLS.md
+**/SKILLS.md
+AI.md
+**/AI.md
+PROMPT.md
+**/PROMPT.md
+PROMPTS.md
+**/PROMPTS.md
+COPILOT_INSTRUCTIONS.md
+**/COPILOT_INSTRUCTIONS.md
+*.prompt.md
+
+# ---- AI 工具的本機設定目錄 ----
+.claude/
+.codex/
+.cursor/
+.windsurf/
+.opencode/
+.agents/
+.continue/
+.aider*
+
+# ---- GitHub Copilot 私有指令 ----
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
