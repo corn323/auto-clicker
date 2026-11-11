@@ -40,5 +40,8 @@
 
 ### Notes
 
+- 首次正式發布：<https://github.com/corn323/auto-clicker/releases/tag/v0.1.0>
+  （含 `AutoClicker.exe`、`AutoClicker.exe.sha256`、`AutoClicker-onedir.zip`
+  與 build provenance 來源證明）。
 - exe 未經程式碼簽章；SmartScreen / Smart App Control 可能攔截，
   建議改用原始碼執行。遊戲防作弊與服務條款風險請自行評估。

@@ -50,6 +50,11 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 Release 附上 `AutoClicker.exe` 與 `AutoClicker.exe.sha256`；若 onefile
 冷啟動較慢，另附 `AutoClicker-onedir.zip`。
 
+目前版本：**v0.1.0** →
+<https://github.com/corn323/auto-clicker/releases/tag/v0.1.0>
+（`AutoClicker.exe` SHA256：
+`64E20B32D68567D5390E9B656D86E4B00AA5103B7532B16BD6697D88742F537B`）
+
 1. PowerShell 比對雜湊：
 
 ```powershell
@@ -70,24 +75,28 @@ gh attestation verify .\AutoClicker.exe --repo corn323/auto-clicker
 
 ### 實測數據
 
-量測環境：Windows 11（26xxx build）、Python 3.10.11、PyInstaller 6.22.3。
+全部為實際量測值；本機為 Windows 11、Python 3.10.11、PyInstaller 6.22.3，
+CI 為 GitHub Actions `windows-latest`（Python 3.12.10、PyInstaller 6.22.3）。
 
-| 項目 | 數值 |
-|---|---|
-| Python 直譯器啟動（`python -c pass`） | 26–37 ms（5 次量測） |
-| GUI 啟動（原始碼 `pythonw main.py`） | 首次 1006 ms（冷啟含磁碟快取）、後續 337 / 391 ms |
-| GUI 閒置記憶體（視窗開啟 5 秒後） | 31.8–31.9 MB |
-| GUI 記憶體 128 秒取樣 | 31.8 MB 全程持平，無持續成長 |
-| `--onefile` 產物大小 | 8.35 MB |
-| `--onedir` 產物大小（資料夾） | 19.28 MB |
-| `--onedir` 壓縮後（zip） | 8.33 MB |
-| 打包後 EXE 冷啟動 | 未測* |
-| 打包後 EXE 閒置記憶體 | 未測* |
+| 項目 | 本機 | CI（windows-latest） |
+|---|---:|---:|
+| Python 直譯器啟動（`python -c pass`） | 26–37 ms | — |
+| GUI 啟動（原始碼 `pythonw main.py`） | 首次 1006 ms、後續 337 / 391 ms | — |
+| GUI 閒置記憶體（視窗開啟 5 秒後） | 31.8–31.9 MB | — |
+| GUI 記憶體 128 秒取樣 | 31.8 MB 全程持平，無持續成長 | — |
+| 打包後 EXE 冷啟動（onefile） | 1483 ms* | 約 3528 ms |
+| 打包後 EXE 冷啟動（onedir） | 未測† | 約 333 ms |
+| 打包後 EXE 閒置記憶體 | 36.5 MB* | 40.7 MB |
+| `--onefile` 大小 | 8.35 MB | 11.12 MB |
+| `--onedir` 大小（資料夾） | 19.28 MB | 26.60 MB |
+| `--onedir` 壓縮後（zip） | 8.33 MB | 11.42 MB |
 
-\* 本機啟用 Smart App Control，未簽章的新建 exe 會被系統攔截（CodeIntegrity
-事件 3118），因此無法在本機啟動打包後的 exe 取得數據；Release workflow 會在
-`windows-latest` 上啟動 exe 做煙霧測試並量測 onefile／onedir 的啟動時間與
-閒置記憶體，直接寫入該次 Release 的說明。數據不在此捏造。
+\* 以本機下載的 v0.1.0 正式產物量測：視窗 handle 正常取得、WM_CLOSE 可正常
+關閉、過程無任何點擊操作。
+† 本機啟用 Smart App Control，新產生的未簽章 exe 會被系統攔截
+（CodeIntegrity 事件 3118）；由 GitHub Release 下載的 onedir 產物同樣被攔截，
+因此本機無法量測，CI 上的同一份建置流程則已完成啟動、取得視窗 handle 與
+量測。每一個 Release 的說明都會附上當次 runner 的實測數字。
 
 `--onefile` 是單一 exe、免解壓好攜帶，但啟動時需先解壓到暫存，一般較慢；
 `--onedir` 需整包解壓，啟動較快、總體積較大，適合長期固定使用。若 Release
