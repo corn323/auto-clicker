@@ -99,6 +99,26 @@ class TestNoForbiddenApis(unittest.TestCase):
             t = path.read_text(encoding="utf-8")
             self.assertNotIn("pickle.load", t)
 
+    def test_openprocess_least_privilege(self):
+        text = (ROOT / "autoclicker" / "win32.py").read_text(encoding="utf-8")
+        self.assertIn("PROCESS_QUERY_LIMITED_INFORMATION", text)
+        self.assertNotIn("PROCESS_ALL_ACCESS", text)
+        self.assertNotIn("PROCESS_VM_READ", text)
+        self.assertNotIn("PROCESS_CREATE_THREAD", text)
+
+    def test_all_handles_closed(self):
+        text = (ROOT / "autoclicker" / "win32.py").read_text(encoding="utf-8")
+        self.assertIn("CloseHandle(hproc)", text)
+        self.assertIn("CloseHandle(token)", text)
+        # 每個 OpenProcess / OpenProcessToken 都必須有 finally 區塊關閉
+        self.assertIn("finally:", text)
+        self.assertGreaterEqual(text.count("CloseHandle"), 2)
+
+    def test_no_corner_detection_during_overlay(self):
+        text = (ROOT / "autoclicker" / "ui.py").read_text(encoding="utf-8")
+        self.assertIn("set_corner_suppressed(True)", text)
+        self.assertIn("set_corner_suppressed(False)", text)
+
 
 if __name__ == "__main__":
     unittest.main()

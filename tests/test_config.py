@@ -85,6 +85,27 @@ class TestNormalizeSettings(unittest.TestCase):
         self.assertEqual(s.config.hotkey_start, "F8")
         self.assertEqual(s.config.hotkey_stop, "F9")
 
+    def test_corner_min_size_two(self):
+        w: list[str] = []
+        s = normalize_settings({"config": {"corner_size": 0,
+                                           "corner_enabled": "yes"}}, w)
+        self.assertGreaterEqual(s.config.corner_size, 2)
+        self.assertIs(s.config.corner_enabled, True)
+
+    def test_corner_disabled(self):
+        w: list[str] = []
+        s = normalize_settings({"config": {"corner_enabled": False}}, w)
+        self.assertIs(s.config.corner_enabled, False)
+
+    def test_press_delay_clamped(self):
+        w: list[str] = []
+        s = normalize_settings({"config": {"press_delay_ms": 999}}, w)
+        self.assertEqual(s.config.press_delay_ms, 50)
+        s = normalize_settings({"config": {"press_delay_ms": -3}}, w)
+        self.assertEqual(s.config.press_delay_ms, 0)
+        s = normalize_settings({"config": {"press_delay_ms": "12"}}, w)
+        self.assertEqual(s.config.press_delay_ms, 8)  # 字串無效 → 預設
+
     def test_roundtrip(self):
         s = default_settings()
         s.points = [sanitize_point({"name": "測試", "x": 100, "y": 200,

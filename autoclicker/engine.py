@@ -102,9 +102,44 @@ def curve_path(x0: int, y0: int, x1: int, y1: int,
     return pts
 
 
-def make_corner_check(corner: str, size: int) -> Callable[[], bool]:
-    """角落急停：游標進入角落 size×size 區域即回 True。"""
+def press_delay_ms(base_ms: int) -> int:
+    """按下前短延遲：設定值（0–50ms）加上 0–3ms 小幅隨機，避免節奏工整。"""
+    base = max(0, min(50, int(base_ms)))
+    if base <= 0:
+        return 0
+    return base + secrets.randbelow(4)
+
+
+_corner_suppressed = threading.Event()
+
+
+def set_corner_suppressed(on: bool) -> None:
+    """暫停/恢復角落急停偵測（選取位置遮罩、錄製期間使用）。"""
+    if on:
+        _corner_suppressed.set()
+    else:
+        _corner_suppressed.clear()
+
+
+def corner_suppressed() -> bool:
+    return _corner_suppressed.is_set()
+
+
+def make_corner_check(corner: str, size: int,
+                      suppressed: Callable[[], bool] | None = None
+                      ) -> Callable[[], bool]:
+    """角落急停：游標進入角落 size×size 區域即回 True。
+
+    suppressed 回 True 時（例如選取位置遮罩開啟）暫停偵測；
+    容差強制至少 2px，避免誤觸。
+    """
+    size = max(2, int(size))
+
     def check() -> bool:
+        if _corner_suppressed.is_set():
+            return False
+        if suppressed is not None and suppressed():
+            return False
         try:
             x, y = win32.get_cursor_pos()
         except OSError:
@@ -314,7 +349,8 @@ class ClickEngine:
             return
         self._start_time = time.perf_counter()
         self._emit(force=True)
-        corner = make_corner_check(g.emergency_corner, g.corner_size)
+        corner = (make_corner_check(g.emergency_corner, g.corner_size)
+                  if g.corner_enabled else None)
         sleeper = Sleeper(self._stop, self._pause, corner)
         while not self._stop.is_set():
             if self._stop_reached(g):
@@ -351,6 +387,9 @@ class ClickEngine:
         dx, dy = normal_offset(point.radius)
         tx, ty = clamp_to_virtual(point.x + dx, point.y + dy)
         if not move_with_mode(tx, ty, g.move_mode, sleeper):
+            return False
+        delay = press_delay_ms(g.press_delay_ms)
+        if delay and not sleeper.wait(delay):
             return False
         clicks = 2 if point.double else 1
         for i in range(clicks):

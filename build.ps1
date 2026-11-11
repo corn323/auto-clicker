@@ -1,8 +1,15 @@
 # AutoClicker 打包腳本：PyInstaller 單檔 + SHA256
 # 使用方式：在專案根目錄執行  powershell -ExecutionPolicy Bypass -File build.ps1
-# 事前準備：pip install pyinstaller
+# 事前準備（需自行手動安裝，本腳本不會下載任何東西）：
+#   pip install pyinstaller
 $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
+
+# 只做本機檢查與打包；無任何網路下載指令（無 Invoke-WebRequest / pip install）
+python -c "import PyInstaller" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    throw "缺少 PyInstaller。請先手動執行：pip install pyinstaller（本腳本不自動下載）"
+}
 
 python -m PyInstaller --onefile --windowed --name AutoClicker `
     --add-data "examples;examples" `

@@ -16,7 +16,8 @@ from . import scripting, win32
 from .config import (APP_NAME, MAX_POINTS, PointConfig, Settings,
                      button_label, sanitize_global, sanitize_point,
                      save_settings)
-from .engine import ClickEngine, EngineStatus, uniform_range
+from .engine import (ClickEngine, EngineStatus, set_corner_suppressed,
+                     uniform_range)
 
 # ---- 色票（語意角色） ----
 BG = "#14171c"
@@ -48,7 +49,12 @@ STATE_STYLE = {
 
 
 class ScreenOverlay:
-    """覆蓋整個虛擬桌面的半透明遮罩；點一下記錄座標，Esc/右鍵取消。"""
+    """覆蓋整個虛擬桌面的半透明遮罩；點一下記錄座標，Esc/右鍵取消。
+
+    位置與尺寸一律以 Win32 虛擬桌面「實體像素」計算（virtual_rect +
+    SetWindowPos），不依賴 Tk 的 DPI 縮放換算，確保負座標副螢幕與
+    混合 DPI 下遮罩仍精準貼合；點擊座標同樣用 GetCursorPos 實體像素。
+    """
 
     def __init__(self, root: tk.Tk, on_pick, on_cancel) -> None:
         self.on_pick = on_pick
@@ -64,7 +70,10 @@ class ScreenOverlay:
         self.canvas.pack(fill="both", expand=True)
         self.top.update_idletasks()
         hwnd = int(self.top.wm_frame(), 16)
-        win32.set_window_pos(hwnd, vx, vy, vw, vh)
+        if not win32.set_window_pos(hwnd, vx, vy, vw, vh):
+            # 極少數環境 SetWindowPos 失敗時退回 Tk geometry（仍為實體像素）
+            self.top.geometry(f"{vw}x{vh}+{vx}+{vy}")
+        self.top.update_idletasks()
         try:
             self.top.grab_set()
             self.top.focus_force()
@@ -123,6 +132,7 @@ class App:
         self._sel_index: int | None = None
         self._drag_row: str | None = None
         self._save_job: str | None = None
+        self._toast_job: str | None = None
         self.monitors: list[win32.MonitorInfo] = []
         self._dpi = next((m.dpi for m in win32.list_monitors() if m.primary), 96)
         self._px = lambda n: max(1, int(round(n * self._dpi / 96)))
@@ -256,6 +266,8 @@ class App:
         self.v_hk_record = tk.StringVar(value="F6")
         self.v_corner = tk.StringVar(value=CORNER_LABELS["top-left"])
         self.v_corner_size = tk.StringVar(value="3")
+        self.v_corner_enabled = tk.BooleanVar(value=True)
+        self.v_press_delay = tk.StringVar(value="8")
 
     @staticmethod
     def _key_of(labels: dict, display: str) -> str | None:
@@ -477,6 +489,9 @@ class App:
         f = self._lrow(tab, "最低間隔")
         spin(f, self.v_min_interval, 10, 5000).pack(side="left")
         muted(f, "ms（兩次點擊之間至少）")
+        f = self._lrow(tab, "按下前延遲")
+        spin(f, self.v_press_delay, 0, 50).pack(side="left")
+        muted(f, "ms（移動後、按下前，另加 0–3ms 隨機）")
         f = self._lrow(tab, "隨機長停頓")
         spin(f, self.v_pause_chance, 0, 100, 5).pack(side="left")
         muted(f, "%，")
@@ -505,10 +520,13 @@ class App:
         ttk.Button(f, text="套用熱鍵", command=self._apply_hotkeys).pack(side="left")
         muted(f, "熱鍵被其他程式占用時可改鍵")
         f = self._lrow(tab, "角落急停")
-        combo(f, self.v_corner, list(CORNER_LABELS.values()), 8).pack(side="left")
+        ttk.Checkbutton(f, text="啟用", variable=self.v_corner_enabled,
+                        command=self._apply_global).pack(side="left")
+        combo(f, self.v_corner, list(CORNER_LABELS.values()), 8
+              ).pack(side="left", padx=(8, 0))
         muted(f, "游標進入角落")
         spin(f, self.v_corner_size, 2, 100, 5).pack(side="left")
-        muted(f, "px 即停止")
+        muted(f, "px（最少 2px）")
         f = self._lrow(tab, "螢幕配置")
         self.monitor_label = ttk.Label(f, style="Muted.TLabel", text="…",
                                        justify="left")
@@ -579,6 +597,8 @@ class App:
             ttk.Label(bar, style="Hint.TLabel", text=caption
                       ).pack(side="left", padx=(24, 4))
             value.pack(side="left")
+        self.toast_label = tk.Label(bar, text="", bg=SURFACE, fg=SUCCESS)
+        self.toast_label.pack(side="left", padx=(24, 0))
         self.start_btn = ttk.Button(bar, text="開始 F8", style="Accent.TButton",
                                     command=self.toggle_run, width=11)
         self.start_btn.pack(side="right")
@@ -693,6 +713,8 @@ class App:
         self.v_hk_record.set(g.hotkey_record)
         self.v_corner.set(CORNER_LABELS.get(g.emergency_corner, "左上"))
         self.v_corner_size.set(str(g.corner_size))
+        self.v_corner_enabled.set(g.corner_enabled)
+        self.v_press_delay.set(str(g.press_delay_ms))
         self._update_stop_extra()
 
     def _apply_global(self) -> None:
@@ -718,7 +740,10 @@ class App:
                "emergency_corner": self._key_of(CORNER_LABELS,
                    str(self.v_corner.get())) or g.emergency_corner,
                "corner_size": self._read_int_var(self.v_corner_size,
-                   g.corner_size)}
+                   g.corner_size),
+               "corner_enabled": bool(self.v_corner_enabled.get()),
+               "press_delay_ms": self._read_int_var(self.v_press_delay,
+                   g.press_delay_ms)}
         self.settings.config = sanitize_global(raw, [])
         self._load_global_vars()
         self._schedule_save()
@@ -757,21 +782,41 @@ class App:
         self.settings.monitor_layout = win32.monitor_signature(monitors)
         return p
 
+    def _flash_status(self, text: str) -> None:
+        """狀態列短暫訊息（錄製回饋），1.8 秒後自動清除。"""
+        self.toast_label.config(text=text)
+        if self._toast_job:
+            try:
+                self.root.after_cancel(self._toast_job)
+            except tk.TclError:
+                pass
+        self._toast_job = self.root.after(1800, self._clear_toast)
+
+    def _clear_toast(self) -> None:
+        self._toast_job = None
+        self.toast_label.config(text="")
+
     def record_point(self, x: int | None = None, y: int | None = None) -> None:
         if self.overlay is not None:
             return
-        if x is None or y is None:
-            x, y = win32.get_cursor_pos()
-        if len(self.settings.points) >= MAX_POINTS:
-            messagebox.showwarning(APP_NAME, f"點位數量已達上限 {MAX_POINTS}。")
-            return
-        p = self._make_point(x, y)
-        if p is None:
-            return
-        self.settings.points.append(p)
-        self._sel_index = len(self.settings.points) - 1
-        self.refresh_tree()
-        self._schedule_save()
+        set_corner_suppressed(True)
+        try:
+            if x is None or y is None:
+                x, y = win32.get_cursor_pos()
+            if len(self.settings.points) >= MAX_POINTS:
+                messagebox.showwarning(APP_NAME, f"點位數量已達上限 {MAX_POINTS}。")
+                return
+            p = self._make_point(x, y)
+            if p is None:
+                return
+            self.settings.points.append(p)
+            self._sel_index = len(self.settings.points) - 1
+            self.refresh_tree()
+            self._schedule_save()
+            self.root.bell()
+            self._flash_status(f"已記錄：{p.name}（{x}, {y}）")
+        finally:
+            set_corner_suppressed(False)
 
     def _pick_add(self) -> None:
         self._open_overlay("add")
@@ -788,6 +833,7 @@ class App:
 
         def picked(x: int, y: int) -> None:
             self.overlay = None
+            set_corner_suppressed(False)
             if mode == "add":
                 self.record_point(x, y)
                 return
@@ -807,8 +853,14 @@ class App:
 
         def cancelled() -> None:
             self.overlay = None
+            set_corner_suppressed(False)
 
-        self.overlay = ScreenOverlay(self.root, picked, cancelled)
+        set_corner_suppressed(True)
+        try:
+            self.overlay = ScreenOverlay(self.root, picked, cancelled)
+        except tk.TclError:
+            set_corner_suppressed(False)
+            raise
 
     def _delete_point(self) -> None:
         if self._sel_index is None:
@@ -958,6 +1010,7 @@ class App:
     def stop_all(self) -> None:
         self.engine.stop()
         self.script_runner.stop()
+        win32.release_all_buttons()
         self._update_run_button()
 
     def _update_run_button(self) -> None:
@@ -1159,11 +1212,11 @@ class App:
             messagebox.showerror(APP_NAME, f"無法儲存設定：{exc.strerror}")
 
     def _on_close(self) -> None:
-        busy = self.engine.is_running() or self.script_runner.is_running()
-        self.stop_all()
+        self.engine.stop()
+        self.script_runner.stop()
+        set_corner_suppressed(False)
         self.hotkeys.stop()
-        if busy:
-            win32.release_all_buttons()
+        win32.release_all_buttons()
         try:
             save_settings(self.settings)
         except OSError:

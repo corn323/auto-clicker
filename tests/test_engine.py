@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import unittest
+from unittest import mock
 
 from autoclicker import engine
 from autoclicker.config import GlobalConfig, PointConfig, Settings
@@ -117,6 +118,112 @@ class TestLifecycle(unittest.TestCase):
         finally:
             holder.set()
             eng.stop()
+
+
+class TestPressDelay(unittest.TestCase):
+    def test_zero(self):
+        self.assertEqual(engine.press_delay_ms(0), 0)
+        self.assertEqual(engine.press_delay_ms(-5), 0)
+
+    def test_default_range(self):
+        for _ in range(500):
+            v = engine.press_delay_ms(8)
+            self.assertGreaterEqual(v, 8)
+            self.assertLessEqual(v, 11)
+
+    def test_clamped_to_50(self):
+        for _ in range(500):
+            v = engine.press_delay_ms(999)
+            self.assertGreaterEqual(v, 50)
+            self.assertLessEqual(v, 53)
+
+
+class TestCornerCheck(unittest.TestCase):
+    def tearDown(self):
+        engine.set_corner_suppressed(False)
+
+    def _check_at(self, pos, corner="top-left", size=3):
+        with mock.patch.object(engine.win32, "get_cursor_pos",
+                               return_value=pos), \
+             mock.patch.object(engine.win32, "_virtual_rect",
+                               return_value=(0, 0, 1920, 1080)):
+            return engine.make_corner_check(corner, size)()
+
+    def test_triggers_in_corner(self):
+        self.assertTrue(self._check_at((0, 0)))
+        self.assertTrue(self._check_at((2, 2)))
+
+    def test_not_in_corner(self):
+        self.assertFalse(self._check_at((100, 100)))
+
+    def test_tolerance_min_two_px(self):
+        # size=1 應被提高到 2px：(1,1) 會觸發、(2,2) 不會
+        self.assertTrue(self._check_at((1, 1), size=1))
+        self.assertFalse(self._check_at((2, 2), size=1))
+
+    def test_suppressed(self):
+        engine.set_corner_suppressed(True)
+        self.assertFalse(self._check_at((0, 0)))
+        engine.set_corner_suppressed(False)
+        self.assertTrue(self._check_at((0, 0)))
+
+    def test_bottom_right(self):
+        self.assertTrue(self._check_at((1919, 1079), corner="bottom-right"))
+        self.assertFalse(self._check_at((1916, 1079), corner="bottom-right"))
+
+
+class TestButtonRelease(unittest.TestCase):
+    """任何例外/停止都必須送出對應的 button-up（不真的注入輸入）。"""
+
+    def test_release_when_wait_raises_after_press(self):
+        class BoomSleeper:
+            def __init__(self):
+                self.calls = 0
+
+            def wait(self, ms):
+                self.calls += 1
+                if self.calls >= 3:
+                    raise RuntimeError("boom")
+                return True
+
+        eng = engine.ClickEngine()
+        point = PointConfig(name="x", x=10, y=10)
+        g = GlobalConfig(move_mode="teleport", press_delay_ms=8)
+        with mock.patch.object(engine.win32, "move_to"), \
+             mock.patch.object(engine.win32, "mouse_down") as md, \
+             mock.patch.object(engine.win32, "mouse_up") as mu, \
+             mock.patch.object(engine.win32, "_virtual_rect",
+                               return_value=(0, 0, 1920, 1080)):
+            with self.assertRaises(RuntimeError):
+                eng._one_click(point, g, BoomSleeper())
+        md.assert_called_once_with("left")
+        mu.assert_called_once_with("left")
+        self.assertIsNone(eng._held)
+
+    def test_run_finally_releases_held_button(self):
+        eng = engine.ClickEngine()
+        eng._held = "right"
+        eng._start_time = 1.0
+        with mock.patch.object(eng, "_loop", side_effect=RuntimeError("x")), \
+             mock.patch.object(engine.win32, "mouse_up") as mu:
+            eng._run()
+        mu.assert_called_once_with("right")
+        self.assertIsNone(eng._held)
+
+    def test_script_press_releases_on_exception(self):
+        from autoclicker import scripting
+
+        class BoomSleeper:
+            def wait(self, ms):
+                raise RuntimeError("boom")
+
+        runner = scripting.ScriptRunner()
+        with mock.patch.object(scripting.win32, "mouse_down") as md, \
+             mock.patch.object(scripting.win32, "mouse_up") as mu:
+            with self.assertRaises(RuntimeError):
+                runner._press("left", 50, BoomSleeper())
+        md.assert_called_once_with("left")
+        mu.assert_called_once_with("left")
 
 
 if __name__ == "__main__":

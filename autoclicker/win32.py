@@ -314,10 +314,11 @@ def get_pixel(x: int, y: int) -> tuple[int, int, int] | None:
         user32.ReleaseDC(None, hdc)
 
 
-def set_window_pos(hwnd: int, x: int, y: int, w: int, h: int) -> None:
-    user32.SetWindowPos(
+def set_window_pos(hwnd: int, x: int, y: int, w: int, h: int) -> bool:
+    """以實體像素設定視窗位置與大小（支援負座標）；成功回 True。"""
+    return bool(user32.SetWindowPos(
         wintypes.HWND(hwnd), wintypes.HWND(HWND_TOPMOST), x, y, w, h,
-        SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        SWP_NOACTIVATE | SWP_SHOWWINDOW))
 
 
 def _monitor_dpi(hmon: wintypes.HMONITOR) -> int:

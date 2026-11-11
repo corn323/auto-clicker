@@ -82,6 +82,8 @@ class GlobalConfig:
     hotkey_record: str = "F6"
     emergency_corner: str = "top-left"
     corner_size: int = 3
+    corner_enabled: bool = True
+    press_delay_ms: int = 8
 
 
 @dataclass
@@ -243,6 +245,10 @@ def sanitize_global(raw: object, warnings: list[str]) -> GlobalConfig:
         emergency_corner=_as_enum(raw.get("emergency_corner"), CORNERS,
                                   "top-left", "急停角落", warnings),
         corner_size=_as_int(raw.get("corner_size"), 3, 2, 100, "急停角落大小", warnings),
+        corner_enabled=_as_bool(raw.get("corner_enabled"), True,
+                                "角落急停開關", warnings),
+        press_delay_ms=_as_int(raw.get("press_delay_ms"), 8, 0, 50,
+                               "按下前延遲", warnings),
     )
     g.long_pause_min_ms, g.long_pause_max_ms = _apply_ordered_pair(
         g.long_pause_min_ms, g.long_pause_max_ms,
