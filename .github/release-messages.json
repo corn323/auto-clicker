@@ -1,0 +1,7 @@
+{
+  "approx_ms": "約 {v} ms",
+  "not_measured": "未測",
+  "no_changes": "- 找不到提交訊息。",
+  "onedir_shipped": "已附上 AutoClicker-onedir.zip（{size} MB）；若 onefile 啟動較慢，解壓後直接執行 AutoClicker\\AutoClicker.exe。",
+  "onedir_skipped": "本次未附上 onedir 版（onefile 冷啟動未超過 1 秒或未量測）。"
+}

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 預設最小權限；此 workflow 只讀取原始碼。
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 只指定 major.minor：讓 setup-python 依 runner 平台挑選可取得的最新
+        # patch 版本。指定 patch 版本（如 3.11.18）會在部分 runner 映像
+        # （例如 Windows 2025）找不到而讓整個 job 失敗。
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile sources
+        run: python -m compileall -q autoclicker main.py
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t .

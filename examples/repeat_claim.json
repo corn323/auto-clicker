@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "重複領獎 10 次",
+  "steps": [
+    { "type": "wait", "ms": 800 },
+    { "type": "loop", "count": 10, "steps": [
+      { "type": "click", "x": 500, "y": 400, "button": "left", "double": false, "hold_ms": 80 },
+      { "type": "wait", "ms": 1200 },
+      { "type": "click", "x": 1440, "y": 900, "button": "left", "double": true, "hold_ms": 60 },
+      { "type": "wait", "ms": 1500 }
+    ] },
+    { "type": "wait", "ms": 500 }
+  ]
+}

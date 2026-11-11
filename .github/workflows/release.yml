@@ -1,0 +1,227 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+# 預設無權限；只有 release job 取得寫入權。
+permissions: {}
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test before release
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          # major.minor：由 setup-python 依 runner 平台挑選可取得的最新 patch。
+          python-version: "3.12"
+
+      - name: Compile sources
+        run: python -m compileall -q autoclicker main.py
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t .
+
+  release:
+    name: Build and publish
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          # major.minor：由 setup-python 依 runner 平台挑選可取得的最新 patch。
+          python-version: "3.12"
+
+      - name: Verify tag matches __version__
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = python -c "import autoclicker; print(autoclicker.__version__)"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to read autoclicker.__version__." }
+          if ("v$version" -ne $env:TAG) {
+            throw "Tag '$env:TAG' does not match autoclicker.__version__ 'v$version'."
+          }
+
+      - name: Install build dependencies
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: python -m pip install --no-input -r requirements-build.txt
+
+      - name: Build onefile
+        run: |
+          $examples = (Resolve-Path "examples").Path
+          python -m PyInstaller --onefile --windowed --name AutoClicker --add-data "$examples;examples" --clean --noconfirm --distpath dist --workpath build\one --specpath build\spec-one main.py
+
+      - name: Build onedir
+        run: |
+          $examples = (Resolve-Path "examples").Path
+          python -m PyInstaller --onedir --windowed --name AutoClicker --add-data "$examples;examples" --clean --noconfirm --distpath dist-onedir --workpath build\dir --specpath build\spec-dir main.py
+
+      - name: Write SHA256
+        run: |
+          $hash = (Get-FileHash -LiteralPath "dist\AutoClicker.exe" -Algorithm SHA256).Hash
+          "$hash  AutoClicker.exe" | Set-Content -LiteralPath "dist\AutoClicker.exe.sha256" -Encoding ascii
+          $expected = (Get-Content "dist\AutoClicker.exe.sha256" -Raw).Split()[0].ToUpper()
+          if ($expected -ne $hash.ToUpper()) { throw "SHA256 file does not match the exe." }
+
+      - name: Smoke test and measure
+        id: bench
+        run: |
+          $ErrorActionPreference = "Stop"
+          $onefile = (Resolve-Path "dist\AutoClicker.exe").Path
+          $onedir = (Resolve-Path "dist-onedir\AutoClicker\AutoClicker.exe").Path
+          $sizeMB = [math]::Round((Get-Item $onefile).Length / 1MB, 2)
+          $dirSizeMB = [math]::Round(((Get-ChildItem "dist-onedir\AutoClicker" -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 2)
+          $startMs = ""
+          $memMB = ""
+          $dirStartMs = ""
+          $dirMemMB = ""
+          $tkOk = "false"
+          $ship = "false"
+
+          function Measure-App([string]$path) {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process -FilePath $path -PassThru
+            $deadline = (Get-Date).AddSeconds(20)
+            $win = $null
+            while ((Get-Date) -lt $deadline) {
+              $procs = @(Get-Process AutoClicker -ErrorAction SilentlyContinue)
+              $win = $procs | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+              if ($win) { break }
+              if ($p.HasExited -and $procs.Count -eq 0) { break }
+              Start-Sleep -Milliseconds 50
+            }
+            $sw.Stop()
+            $procs = @(Get-Process AutoClicker -ErrorAction SilentlyContinue)
+            if ($procs.Count -eq 0) {
+              throw "Smoke test failed: '$path' exited during startup."
+            }
+            if (-not $win) {
+              Start-Sleep -Seconds 5
+              Get-Process AutoClicker -ErrorAction SilentlyContinue | Stop-Process -Force
+              Start-Sleep -Milliseconds 800
+              return @{ ms = ""; mem = "" }
+            }
+            Start-Sleep -Seconds 5
+            $win.Refresh()
+            $result = @{ ms = [int]$sw.Elapsed.TotalMilliseconds; mem = [math]::Round($win.WorkingSet64 / 1MB, 1) }
+            Get-Process AutoClicker -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Milliseconds 800
+            return $result
+          }
+
+          python -c "import tkinter; r = tkinter.Tk(); r.update(); r.destroy()"
+          if ($LASTEXITCODE -eq 0) {
+            $tkOk = "true"
+            $one = Measure-App $onefile
+            $startMs = $one.ms
+            $memMB = $one.mem
+            $dir = Measure-App $onedir
+            $dirStartMs = $dir.ms
+            $dirMemMB = $dir.mem
+          } else {
+            Write-Warning "Tk could not be initialized on this runner; skipping the exe launch check (non-blocking)."
+            "Tk unavailable on this runner: exe launch check skipped (non-blocking)." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+
+          if ($tkOk -eq "true" -and $startMs -ne "" -and [int]$startMs -gt 1000) {
+            $ship = "true"
+            Compress-Archive -Path "dist-onedir\AutoClicker" -DestinationPath "dist\AutoClicker-onedir.zip" -Force
+          }
+
+          "start_ms=$startMs" | Add-Content -Path $env:GITHUB_OUTPUT
+          "mem_mb=$memMB" | Add-Content -Path $env:GITHUB_OUTPUT
+          "onedir_start_ms=$dirStartMs" | Add-Content -Path $env:GITHUB_OUTPUT
+          "onedir_mem_mb=$dirMemMB" | Add-Content -Path $env:GITHUB_OUTPUT
+          "size_mb=$sizeMB" | Add-Content -Path $env:GITHUB_OUTPUT
+          "onedir_size_mb=$dirSizeMB" | Add-Content -Path $env:GITHUB_OUTPUT
+          "tk_ok=$tkOk" | Add-Content -Path $env:GITHUB_OUTPUT
+          "ship_onedir=$ship" | Add-Content -Path $env:GITHUB_OUTPUT
+
+          $line = "onefile: $sizeMB MB, start $(if ($startMs) { "$startMs ms" } else { 'not measured' }), idle $(if ($memMB) { "$memMB MB" } else { 'not measured' }); onedir: $dirSizeMB MB, start $(if ($dirStartMs) { "$dirStartMs ms" } else { 'not measured' }), idle $(if ($dirMemMB) { "$dirMemMB MB" } else { 'not measured' }); Tk: $tkOk; onedir zip shipped: $ship"
+          $line | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: dist/AutoClicker.exe
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          START_MS: ${{ steps.bench.outputs.start_ms }}
+          MEM_MB: ${{ steps.bench.outputs.mem_mb }}
+          ONEDIR_START_MS: ${{ steps.bench.outputs.onedir_start_ms }}
+          ONEDIR_MEM_MB: ${{ steps.bench.outputs.onedir_mem_mb }}
+          SIZE_MB: ${{ steps.bench.outputs.size_mb }}
+          ONEDIR_SIZE_MB: ${{ steps.bench.outputs.onedir_size_mb }}
+          SHIP_ONEDIR: ${{ steps.bench.outputs.ship_onedir }}
+        run: |
+          $ErrorActionPreference = "Continue"
+          $msg = Get-Content ".github\release-messages.json" -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+          $prev = git describe --tags --abbrev=0 "$($env:TAG)^" 2>$null
+          if ($LASTEXITCODE -ne 0) { $prev = "" }
+          if (-not $prev) {
+            $changes = (git log -n 30 --pretty=format:"- %s (%h)") -join "`n"
+          } else {
+            $changes = (git log "$prev..$($env:TAG)" --pretty=format:"- %s (%h)") -join "`n"
+          }
+          if (-not $changes) { $changes = $msg.no_changes }
+
+          $start = if ($env:START_MS) { $msg.approx_ms.Replace("{v}", $env:START_MS) } else { $msg.not_measured }
+          $mem = if ($env:MEM_MB) { "$($env:MEM_MB) MB" } else { $msg.not_measured }
+          $dirStart = if ($env:ONEDIR_START_MS) { $msg.approx_ms.Replace("{v}", $env:ONEDIR_START_MS) } else { $msg.not_measured }
+          $dirMem = if ($env:ONEDIR_MEM_MB) { "$($env:ONEDIR_MEM_MB) MB" } else { $msg.not_measured }
+          if ($env:SHIP_ONEDIR -eq "true") {
+            $zipSize = [math]::Round((Get-Item "dist\AutoClicker-onedir.zip").Length / 1MB, 2)
+            $onedirNote = $msg.onedir_shipped.Replace("{size}", "$zipSize")
+          } else {
+            $onedirNote = $msg.onedir_skipped
+          }
+
+          $tpl = Get-Content ".github\release-notes.md" -Raw -Encoding UTF8 -ErrorAction Stop
+          $tpl = $tpl.Replace("{{TAG}}", $env:TAG)
+          $tpl = $tpl.Replace("{{REPO}}", $env:REPO)
+          $tpl = $tpl.Replace("{{CHANGES}}", $changes)
+          $tpl = $tpl.Replace("{{START}}", $start)
+          $tpl = $tpl.Replace("{{MEM}}", $mem)
+          $tpl = $tpl.Replace("{{ONEDIR_START}}", $dirStart)
+          $tpl = $tpl.Replace("{{ONEDIR_MEM}}", $dirMem)
+          $tpl = $tpl.Replace("{{ONEFILE_MB}}", "$($env:SIZE_MB) MB")
+          $tpl = $tpl.Replace("{{ONEDIR_SIZE_MB}}", "$($env:ONEDIR_SIZE_MB) MB")
+          $tpl = $tpl.Replace("{{ONEDIR_NOTE}}", $onedirNote)
+          [IO.File]::WriteAllText((Join-Path $PWD "RELEASE_NOTES.md"), $tpl, [Text.UTF8Encoding]::new($false))
+
+          $assets = @("dist\AutoClicker.exe", "dist\AutoClicker.exe.sha256")
+          if ($env:SHIP_ONEDIR -eq "true") { $assets += "dist\AutoClicker-onedir.zip" }
+          gh release create $env:TAG $assets --title "AutoClicker $env:TAG" --notes-file RELEASE_NOTES.md
