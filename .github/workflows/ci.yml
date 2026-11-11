@@ -21,7 +21,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11.18", "3.12.16"]
+        # 只指定 major.minor：讓 setup-python 依 runner 平台挑選可取得的最新
+        # patch 版本。指定 patch 版本（如 3.11.18）會在部分 runner 映像
+        # （例如 Windows 2025）找不到而讓整個 job 失敗。
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout

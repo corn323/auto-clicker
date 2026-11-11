@@ -60,6 +60,8 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 - [x] 按下前延遲夾限 0–50ms（+0–3ms 隨機），可被停止中斷
 - [x] 遮罩以虛擬桌面實體像素定位（Win32），不依賴 Tk 縮放
 - [x] 打包腳本僅執行 PyInstaller 與 SHA256，不下載任何東西
+- [x] 安全掃描同時採字串與 AST 結構化檢查（匯入模組／呼叫函式／動態屬性）
+- [x] 執行期僅允許標準函式庫與本專案套件（AST 檢查，零第三方 Runtime 依賴）
 - [x] 所有 GitHub Actions 釘完整 commit SHA（含官方 `actions/*`）
 - [x] workflow 預設最小權限；只有 Release job 有寫入權
 - [x] 無 `pull_request_target`；Release 僅由 tag 觸發
@@ -94,7 +96,13 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 | 絕對座標正規化四捨五入 | 落點誤差 ≤ 1px | `TestRoundtrip`（1920/1080、2560/1440、負座標、4K） |
 | 遮罩改用虛擬桌面實體像素 | 負座標/混合 DPI 精準貼合 | 手動驗證步驟（README「手動驗證」）；`virtual_rect` 實體像素 |
 | build.ps1 僅 PyInstaller + SHA256 | 供應鏈：不在打包流程下載/安裝 | 腳本無網路指令；缺少 PyInstaller 時僅報錯不下載 |
-| UI 重設計（可縮放、主題、視窗記憶） | 無新增攻擊面；`theme` 限 dark/light，`window` 四欄位皆為整數並夾限，位置不符螢幕時置中 | 106 測試 + 多尺寸/主題截圖 |
-| CI／CodeQL／Release workflow | 供應鏈與權限面：action 釘 SHA、預設唯讀、Release 才 write、無 `pull_request_target`、tag 與 `__version__` 核對、產物 SHA256 與 provenance | workflow 靜態檢視；推送後由 GitHub 實際執行驗證 |
+| UI 重設計（可縮放、主題、視窗記憶） | 無新增攻擊面；`theme` 限 dark/light，`window` 四欄位皆為整數並夾限，位置不符螢幕時置中 | 118 測試 + 多尺寸/主題截圖 |
+| CI／CodeQL／Release workflow | 供應鏈與權限面：action 釘 SHA、預設唯讀、Release 才 write、無 `pull_request_target`、tag 與 `__version__` 核對、產物 SHA256 與 provenance | `TestWorkflowHardening`（釘 SHA／權限／無 secrets／persist-credentials）；推送後由 GitHub 實際執行驗證 |
+| CI 改用 major.minor Python 版本 | 修正 Windows 2025 runner 找不到 3.11.18／3.12.16 導致測試完全未執行的問題 | `ci.yml` 矩陣 3.11–3.14；GitHub Actions 實際執行結果見 README |
+| 安全測試改以 AST 結構化檢查 | 補上字串掃描盲點：直接檢查「匯入哪些模組、呼叫哪些函式」 | `TestAstSecurity`（標準庫限定、危險呼叫清單、動態 getattr、網址字串） |
+| 腳本分派改為明確分支 | 移除 `getattr(self, f"_do_{stype}")` 動態屬性取用 | `test_no_dynamic_attribute_evaluation`；`test_scripting.py` 既有案例 |
+| GUI 貼上腳本加上 1 MB 上限 | 避免一次貼入超大字串拖垮 GUI | `script_page.py` 尺寸檢查 |
+| 打包移除 `--exclude-module urllib` 等排除 | PyInstaller 6.x runtime hook 需要 urllib，排除後 exe 開不了 GUI；原始碼層的安全保證改由 AST 掃描提供 | `build.ps1` 實測打包成功；Release workflow 煙霧測試 |
+| AI 開發文件與本機工具設定排除出版控 | 避免提示詞、Skills、路徑等本機資訊外流 | `.gitignore` ＋ `git check-ignore -v` |
 
-測試總數：**106 例**，`python -m unittest discover -s tests -t .` 全數通過。
+測試總數：**118 例**，`python -m unittest discover -s tests -t .` 全數通過。

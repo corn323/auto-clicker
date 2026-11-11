@@ -83,8 +83,12 @@ class ScriptPageMixin:
             self.example_combo.current(0)
 
     def _script_text_parse(self):
+        text = self.script_text.get("1.0", "end-1c")
+        # GUI 直接貼上的內容同樣需要大小上限，避免一次貼入超大字串拖垮 GUI。
+        if len(text) > scripting.MAX_FILE_BYTES:
+            return None, [f"腳本內容超過 {scripting.MAX_FILE_BYTES // 1000} KB 上限"], []
         try:
-            raw = json.loads(self.script_text.get("1.0", "end-1c"))
+            raw = json.loads(text)
         except json.JSONDecodeError as exc:
             return None, [f"JSON 格式錯誤：{exc}"], []
         return scripting.parse_script(raw)
