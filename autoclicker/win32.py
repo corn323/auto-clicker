@@ -180,6 +180,7 @@ kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel32.OpenProcess.restype = wintypes.HANDLE
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.CloseHandle.restype = wintypes.BOOL
+kernel32.GetCurrentProcessId.restype = wintypes.DWORD
 
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TOKEN_QUERY = 0x0008
@@ -412,7 +413,7 @@ def _process_elevated(pid: int) -> bool | None:
             return None
         return bool(elev.value)
     finally:
-        if token:
+        if token.value:
             kernel32.CloseHandle(token)
         kernel32.CloseHandle(hproc)
 
