@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "藥水用完補充",
+  "steps": [
+    { "type": "wait", "ms": 300 },
+    { "type": "if_pixel_color", "x": 1800, "y": 1040, "color": "#AA2B1E", "tolerance": 30,
+      "steps": [
+        { "type": "click", "x": 1800, "y": 1040, "button": "left", "double": false, "hold_ms": 40 },
+        { "type": "wait", "ms": 600 },
+        { "type": "click", "x": 960, "y": 860, "button": "left", "double": false, "hold_ms": 50 },
+        { "type": "wait", "ms": 800 }
+      ],
+      "else": [
+        { "type": "press_key", "key": "R", "hold_ms": 30 },
+        { "type": "wait", "ms": 400 }
+      ] }
+  ]
+}

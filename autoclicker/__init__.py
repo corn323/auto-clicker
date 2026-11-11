@@ -1,0 +1,1 @@
+"""AutoClicker 套件。"""

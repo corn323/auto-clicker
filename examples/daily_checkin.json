@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "每日簽到",
+  "steps": [
+    { "type": "wait", "ms": 500 },
+    { "type": "click", "x": 960, "y": 540, "button": "left", "double": false, "hold_ms": 60 },
+    { "type": "wait", "ms": 1000 },
+    { "type": "click", "x": 1284, "y": 788, "button": "left", "double": false, "hold_ms": 50 },
+    { "type": "wait", "ms": 2000 },
+    { "type": "click", "x": 1720, "y": 120, "button": "left", "double": false, "hold_ms": 50 }
+  ]
+}
