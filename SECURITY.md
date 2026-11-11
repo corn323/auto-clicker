@@ -16,7 +16,7 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 | T6 | 對系統管理員視窗盲目注入 | UIPI | 偵測自身與前景視窗權限（`OpenProcess` + TokenElevation），不足時提示而非靜默失敗；`SendInput` 失敗抛 `OSError` 帶 UIPI 說明 |
 | T7 | 程式失控狂點 | 邏輯錯誤 | F9 熱鍵 + 狀態列「停止」≤ 100ms 回應（所有等待皆可中斷）；角落急停；任何例外、停止、關閉視窗都送 `release_all_buttons()`；按下後的 `finally` 保證對應 button-up |
 | T8 | 洩漏使用者資料 | — | 無網路 API、無遙測；設定只寫本機 `%APPDATA%` |
-| T9 | 遮罩/錄製期間誤觸角落急停，導致無法操作 | 自身功能衝突 | `set_corner_suppressed()` 於選取位置遮罩與錄製期間暫停角落偵測，結束（含例外）即恢復 |
+| T9 | 遮罩/新增期間誤觸角落急停，導致無法操作 | 自身功能衝突 | `set_corner_suppressed()` 於選取畫面遮罩與新增期間暫停角落偵測，結束（含例外）即恢復 |
 | T10 | 行程權限查詢過度取權 | UIPI 偵測 | `OpenProcess` 僅要求 `PROCESS_QUERY_LIMITED_INFORMATION`，且 `hproc`/`token` 皆以 `try/finally` + `CloseHandle` 關閉 |
 | T11 | 按下前延遲被濫用成超長等待 | 設定檔 | `press_delay_ms` 夾限 0–50ms，隨機附加 0–3ms；所有延遲皆可被停止/急停中斷 |
 
@@ -51,7 +51,7 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 - [x] 全域熱鍵可隨時急停；例外/停止/關窗皆送出 button-up
 - [x] UIPI 權限差異有偵測與提示，不靜默
 - [x] 行程查詢僅 `PROCESS_QUERY_LIMITED_INFORMATION`，handle 全數 finally 關閉
-- [x] 遮罩/錄製期間角落偵測暫停；容差下限 2px
+- [x] 遮罩/新增期間角落偵測暫停；容差下限 2px
 - [x] 按下前延遲夾限 0–50ms（+0–3ms 隨機），可被停止中斷
 - [x] 遮罩以虛擬桌面實體像素定位（Win32），不依賴 Tk 縮放
 - [x] 打包腳本僅執行 PyInstaller 與 SHA256，不下載任何東西
@@ -60,13 +60,14 @@ AutoClicker 是在本機以使用者權限執行、並向其他視窗注入滑�
 
 | 變更 | 安全影響 | 驗證 |
 |---|---|---|
-| F6 錄製改為立即記錄並加音效/狀態列回饋 | 無新增攻擊面；不再有等待期間的輸入空窗 | 手動 + 截圖驗證 |
-| 角落急停可開關、可選角落、遮罩/錄製期間暫停 | 避免自身功能誤觸停止；容差下限 2px 防誤判 | `TestCornerCheck`（觸發/不觸發/下限/suppressed/負座標端點） |
+| F6 新增改為立即記錄並加音效/標題列回饋 | 無新增攻擊面；不再有等待期間的輸入空窗 | 手動 + 截圖驗證 |
+| 角落急停可開關、可選角落、遮罩/新增期間暫停 | 避免自身功能誤觸停止；容差下限 2px 防誤判 | `TestCornerCheck`（觸發/不觸發/下限/suppressed/負座標端點） |
 | 按下前短延遲（0–50ms + 隨機） | 延遲可中斷；夾限防止超長等待 | `TestPressDelay`、`TestStopCondition` |
 | OpenProcess 最小權限 + finally 關閉 handle | 降低權限暴露與 handle 洩漏 | 原始碼斷言：僅 `PROCESS_QUERY_LIMITED_INFORMATION`、`CloseHandle` 於 finally |
 | 例外/停止/關窗送出 button-up | 防止按鍵卡住（左/右/中鍵） | `TestButtonRelease`（按下後例外、執行緒 finally、腳本按壓例外） |
 | 絕對座標正規化四捨五入 | 落點誤差 ≤ 1px | `TestRoundtrip`（1920/1080、2560/1440、負座標、4K） |
 | 遮罩改用虛擬桌面實體像素 | 負座標/混合 DPI 精準貼合 | 手動驗證步驟（README「手動驗證」）；`virtual_rect` 實體像素 |
 | build.ps1 僅 PyInstaller + SHA256 | 供應鏈：不在打包流程下載/安裝 | 腳本無網路指令；缺少 PyInstaller 時僅報錯不下載 |
+| UI 重設計（可縮放、主題、視窗記憶） | 無新增攻擊面；`theme` 限 dark/light，`window` 四欄位皆為整數並夾限，位置不符螢幕時置中 | 106 測試 + 多尺寸/主題截圖 |
 
 測試總數：**106 例**，`python -m unittest discover -s tests -t .` 全數通過。

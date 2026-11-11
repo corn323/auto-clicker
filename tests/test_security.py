@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCES = [ROOT / "main.py", *sorted((ROOT / "autoclicker").glob("*.py"))]
+SOURCES = [ROOT / "main.py",
+           *sorted((ROOT / "autoclicker").rglob("*.py"))]
 
 FORBIDDEN = [
     # 網路
@@ -115,7 +116,7 @@ class TestNoForbiddenApis(unittest.TestCase):
         self.assertGreaterEqual(text.count("CloseHandle"), 2)
 
     def test_no_corner_detection_during_overlay(self):
-        text = (ROOT / "autoclicker" / "ui.py").read_text(encoding="utf-8")
+        text = (ROOT / "autoclicker" / "ui" / "app.py").read_text(encoding="utf-8")
         self.assertIn("set_corner_suppressed(True)", text)
         self.assertIn("set_corner_suppressed(False)", text)
 

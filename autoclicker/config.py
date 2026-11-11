@@ -38,6 +38,7 @@ ORDER_MODES = ("sequential", "random", "weighted")
 MOVE_MODES = ("teleport", "curve")
 STOP_MODES = ("repeats", "time", "manual")
 CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+THEMES = ("dark", "light")
 
 _BUTTON_LABELS = {"left": "左鍵", "right": "右鍵", "middle": "中鍵"}
 
@@ -91,6 +92,9 @@ class Settings:
     points: list[PointConfig] = field(default_factory=list)
     config: GlobalConfig = field(default_factory=GlobalConfig)
     monitor_layout: list[dict] = field(default_factory=list)
+    # 以下為 UI 偏好，屬新增欄位；舊設定檔缺少時使用預設值。
+    theme: str = "dark"
+    window: dict = field(default_factory=dict)
 
 
 def _as_int(raw: object, default: int, lo: int, hi: int,
@@ -282,6 +286,27 @@ def _sanitize_layout(raw: object, warnings: list[str]) -> list[dict]:
     return layout
 
 
+def _sanitize_window(raw: object, warnings: list[str]) -> dict:
+    """視窗幾何（實體像素）：四個整數欄位缺一不可，否則視為未設定。"""
+    if raw is None or raw == {}:
+        return {}
+    if not isinstance(raw, dict):
+        warnings.append("視窗位置資料無效，已使用預設視窗")
+        return {}
+    bounds = {"x": (-COORD_LIMIT, COORD_LIMIT),
+              "y": (-COORD_LIMIT, COORD_LIMIT),
+              "width": (200, 20000),
+              "height": (150, 20000)}
+    out: dict = {}
+    for key, (lo, hi) in bounds.items():
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            warnings.append("視窗位置資料不完整，已使用預設視窗")
+            return {}
+        out[key] = max(lo, min(hi, value))
+    return out
+
+
 def normalize_settings(raw: object, warnings: list[str] | None = None) -> Settings:
     warnings = warnings if warnings is not None else []
     if not isinstance(raw, dict):
@@ -301,6 +326,8 @@ def normalize_settings(raw: object, warnings: list[str] | None = None) -> Settin
         points=points,
         config=sanitize_global(raw.get("config"), warnings),
         monitor_layout=_sanitize_layout(raw.get("monitor_layout"), warnings),
+        theme=_as_enum(raw.get("theme"), THEMES, "dark", "主題", warnings),
+        window=_sanitize_window(raw.get("window"), warnings),
     )
 
 
@@ -324,6 +351,8 @@ def settings_to_dict(settings: Settings) -> dict:
         "points": [point_to_dict(p) for p in settings.points],
         "config": vars(settings.config).copy(),
         "monitor_layout": settings.monitor_layout,
+        "theme": settings.theme,
+        "window": settings.window,
     }
 
 

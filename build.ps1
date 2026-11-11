@@ -1,4 +1,4 @@
-# AutoClicker 打包腳本：PyInstaller 單檔 + SHA256
+﻿# AutoClicker 打包腳本：PyInstaller 單檔 + SHA256
 # 使用方式：在專案根目錄執行  powershell -ExecutionPolicy Bypass -File build.ps1
 # 事前準備（需自行手動安裝，本腳本不會下載任何東西）：
 #   pip install pyinstaller

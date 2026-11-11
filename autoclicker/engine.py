@@ -114,7 +114,7 @@ _corner_suppressed = threading.Event()
 
 
 def set_corner_suppressed(on: bool) -> None:
-    """暫停/恢復角落急停偵測（選取位置遮罩、錄製期間使用）。"""
+    """暫停/恢復角落急停偵測（選取畫面遮罩、新增期間使用）。"""
     if on:
         _corner_suppressed.set()
     else:
@@ -130,7 +130,7 @@ def make_corner_check(corner: str, size: int,
                       ) -> Callable[[], bool]:
     """角落急停：游標進入角落 size×size 區域即回 True。
 
-    suppressed 回 True 時（例如選取位置遮罩開啟）暫停偵測；
+    suppressed 回 True 時（例如選取畫面遮罩開啟）暫停偵測；
     容差強制至少 2px，避免誤觸。
     """
     size = max(2, int(size))
