@@ -76,10 +76,14 @@ jobs:
         run: python -m pip install --no-input -r requirements-build.txt
 
       - name: Build onefile
-        run: python -m PyInstaller --onefile --windowed --name AutoClicker --add-data "examples;examples" --clean --noconfirm --distpath dist --workpath build\one --specpath build\spec-one main.py
+        run: |
+          $examples = (Resolve-Path "examples").Path
+          python -m PyInstaller --onefile --windowed --name AutoClicker --add-data "$examples;examples" --clean --noconfirm --distpath dist --workpath build\one --specpath build\spec-one main.py
 
       - name: Build onedir
-        run: python -m PyInstaller --onedir --windowed --name AutoClicker --add-data "examples;examples" --clean --noconfirm --distpath dist-onedir --workpath build\dir --specpath build\spec-dir main.py
+        run: |
+          $examples = (Resolve-Path "examples").Path
+          python -m PyInstaller --onedir --windowed --name AutoClicker --add-data "$examples;examples" --clean --noconfirm --distpath dist-onedir --workpath build\dir --specpath build\spec-dir main.py
 
       - name: Write SHA256
         run: |
